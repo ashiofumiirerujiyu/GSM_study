@@ -1,0 +1,53 @@
+# Python Bytecode
+*.pyc
+*.pyo
+*.pyd
+__pycache__/
+
+# 가상 환경
+venv/
+ENV/
+env/
+env.bak/
+venv.bak/
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# IDE와 편집기 설정 파일
+.idea/
+*.sublime-workspace
+*.sublime-project
+.vscode/
+*.code-workspace
+
+# 로그 파일
+*.log
+
+# 운영 체제별 파일
+.DS_Store
+Thumbs.db
+
+# 패키지 배포 파일
+*.egg
+*.egg-info/
+dist/
+build/
+*.pyc
+*.pyo
+*.pyd
+
+# 환경 변수 파일 (예: .env)
+.env
+
+# macOS의 파일
+*.DS_Store
+
+# Windows의 파일
+*.log
+*.tmp
+*.swp
+*.swo
+
+# data 폴더
+data
