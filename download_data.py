@@ -11,7 +11,7 @@ if not os.path.exists(data_dir):
 
 # CIFAR-10 데이터셋 로드
 transform = transforms.Compose([transforms.ToTensor()])
-dataset = torchvision.datasets.CIFAR10(root=data_dir, train=True, download=True, transform=transform)
+dataset = torchvision.datasets.CIFAR10(root=data_dir, train=True, download=False, transform=transform)
 
 # 레이블 이름
 class_names = dataset.classes
@@ -29,7 +29,7 @@ os.makedirs(dog_dir, exist_ok=True)
 os.makedirs(cat_dir, exist_ok=True)
 
 # 'dog'와 'cat' 이미지 각각 100장 저장
-def save_images(class_index, save_path, num_images=100):
+def save_images(class_index, save_path, num_images=500):
     count = 0
     for img, label in dataset:
         if count >= num_images:
