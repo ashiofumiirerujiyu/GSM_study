@@ -51,3 +51,6 @@ build/
 
 # data 폴더
 data
+
+# 모델 가중치
+*.pth
