@@ -2,7 +2,7 @@ import os
 import torch
 import torch.nn as nn
 import logging
-from model import Generator, Discriminator
+from model import Generator, Discriminator, Classifier
 from torchvision.utils import save_image
 from dataloader import get_dataset, get_loaders, get_transform
 
@@ -22,29 +22,36 @@ train_loader, valid_loader, test_loader = get_loaders(train_dataset, valid_datas
 
 # 손실 함수
 loss_func = nn.BCELoss()
+cls_loss_func = nn.CrossEntropyLoss()
 n_epoch = 100
 
 # 모델 초기화
 latent_dim = 10
+num_classes = 10
 generator = Generator(latent_dim)
 discriminator = Discriminator()
+classifier = Classifier(latent_dim, num_classes)
 
 # 옵티마이저
 optimizer_G = torch.optim.Adam(generator.parameters(), lr=0.0001)
 optimizer_D = torch.optim.Adam(discriminator.parameters(), lr=0.0001)
+optimizer_C = torch.optim.Adam(classifier.parameters(), lr=0.0001)
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")     
 print(f"Using device: {device}")
 
 
 class Trainer:
-    def __init__(self, generator, discriminator, optimizer_g, optimizer_d, latent_dim, loss_func, n_epoch, device, save_image_interval, image_save_path):
+    def __init__(self, generator, discriminator, classifier, optimizer_g, optimizer_d, optimizer_c, latent_dim, loss_func, cls_loss_func, n_epoch, device, save_image_interval, image_save_path):
         self.generator = generator.to(device)
         self.discriminator = discriminator.to(device)
+        self.classifier = classifier.to(device)
         self.optimizer_g = optimizer_g
         self.optimizer_d = optimizer_d
+        self.optimizer_c = optimizer_c
         self.latent_dim = latent_dim
         self.loss_func = loss_func
+        self.cls_loss_func = cls_loss_func
         self.n_epoch = n_epoch
         self.device = device
         self.save_image_interval = save_image_interval
@@ -53,43 +60,49 @@ class Trainer:
         # Best model tracking
         self.best_g_loss = float('inf')
         self.best_d_loss = float('inf')
+        self.best_c_loss = float('inf')
         self.best_generator = None
         self.best_discriminator = None
+        self.best_classifier = None
 
     def main(self, train_loader, valid_loader, test_loader):
         for epoch in range(self.n_epoch):
-            train_d_loss, train_g_loss = self.train(train_loader)
-            logging.info(f"Train {epoch+1}/{self.n_epoch}:: d_loss: {train_d_loss:.4f} g_loss: {train_g_loss:.4f}")
+            train_d_loss, train_g_loss, train_c_loss = self.train(train_loader)
+            logging.info(f"Train {epoch+1}/{self.n_epoch}:: d_loss: {train_d_loss:.4f} g_loss: {train_g_loss:.4f} c_loss: {train_c_loss:.4f}")
 
-            valid_d_loss, valid_g_loss = self.valid(valid_loader)
-            logging.info(f"Valid {epoch+1}/{self.n_epoch}:: d_loss: {valid_d_loss:.4f} g_loss: {valid_g_loss:.4f}")
+            valid_d_loss, valid_g_loss, valid_c_loss = self.valid(valid_loader)
+            logging.info(f"Valid {epoch+1}/{self.n_epoch}:: d_loss: {valid_d_loss:.4f} g_loss: {valid_g_loss:.4f} c_loss: {valid_c_loss:.4f}")
 
             # Check if current model is the best
             if valid_g_loss < self.best_g_loss:
                 self.best_g_loss = valid_g_loss
                 self.best_d_loss = valid_d_loss
+                self.best_c_loss = valid_c_loss
                 self.best_generator = self.generator.state_dict()
                 self.best_discriminator = self.discriminator.state_dict()
+                self.best_classifier = self.classifier.state_dict()
                 torch.save(self.best_generator, os.path.join(self.image_save_path, 'best_generator.pth'))
                 torch.save(self.best_discriminator, os.path.join(self.image_save_path, 'best_discriminator.pth'))
-                logging.info(f"Best model saved at epoch {epoch+1} with valid g_loss: {valid_g_loss:.4f} and d_loss: {valid_d_loss:.4f}")
+                torch.save(self.best_classifier, os.path.join(self.image_save_path, 'best_classifier.pth'))
+                logging.info(f"Best model saved at epoch {epoch+1} with valid g_loss: {valid_g_loss:.4f}, d_loss: {valid_d_loss:.4f}, c_loss: {valid_c_loss:.4f}")
 
             # Save generated images at intervals
             if (epoch + 1) % self.save_image_interval == 0:
                 self.save_generated_images(epoch + 1)
 
             # Optionally, you can print the current best model's loss
-            logging.info(f"Current Best:: d_loss: {self.best_d_loss:.4f} g_loss: {self.best_g_loss:.4f}")
+            logging.info(f"Current Best:: d_loss: {self.best_d_loss:.4f} g_loss: {self.best_g_loss:.4f} c_loss: {self.best_c_loss:.4f}")
 
             if epoch % 100 == 0:
-                test_d_loss, test_g_loss = self.test(test_loader)
-                logging.info(f"Test {epoch+1}/{self.n_epoch}:: d_loss: {test_d_loss:.4f} g_loss: {test_g_loss:.4f}")
+                test_d_loss, test_g_loss, test_c_loss = self.test(test_loader)
+                logging.info(f"Test {epoch+1}/{self.n_epoch}:: d_loss: {test_d_loss:.4f} g_loss: {test_g_loss:.4f} c_loss: {test_c_loss:.4f}")
 
     def train(self, train_loader):
         d_losses = 0.0
         g_losses = 0.0
-        for (x, _) in train_loader:
-            x = x.to(self.device)
+        c_losses = 0.0
+        for (x, y) in train_loader:
+            x, y = x.to(self.device), y.to(self.device)
 
             batch_size = x.size(0)
             real_labels = torch.ones(batch_size, 1).to(self.device)
@@ -119,14 +132,23 @@ class Trainer:
             g_loss.backward()
             self.optimizer_g.step()
 
-        return d_losses / len(train_loader), g_losses / len(train_loader)
+            # Classifier 업데이트
+            self.optimizer_c.zero_grad()
+            pred = self.classifier(x)
+            c_loss = self.cls_loss_func(pred, y)
+            c_losses += c_loss.item()
+            c_loss.backward()
+            self.optimizer_c.step()
+
+        return d_losses / len(train_loader), g_losses / len(train_loader), c_losses / len(train_loader)
         
     def valid(self, valid_loader):
         d_losses = 0.0
         g_losses = 0.0
+        c_losses = 0.0
         with torch.no_grad():
-            for (x, _) in valid_loader:
-                x = x.to(self.device)
+            for (x, y) in valid_loader:
+                x, y = x.to(self.device), y.to(self.device)
 
                 batch_size = x.size(0)
                 real_labels = torch.ones(batch_size, 1).to(self.device)
@@ -145,14 +167,20 @@ class Trainer:
                 g_loss = self.loss_func(self.discriminator(fake_x), real_labels)
                 g_losses += g_loss.item()
 
-        return d_losses / len(valid_loader), g_losses / len(valid_loader)
+                # Classifier Loss 계산
+                pred = self.classifier(x)
+                c_loss = self.cls_loss_func(pred, y)
+                c_losses += c_loss.item()
+
+        return d_losses / len(valid_loader), g_losses / len(valid_loader), c_losses / len(valid_loader)
 
     def test(self, test_loader):
         d_losses = 0.0
         g_losses = 0.0
+        c_losses = 0.0
         with torch.no_grad():
-            for (x, _) in test_loader:
-                x = x.to(self.device)
+            for (x, y) in test_loader:
+                x, y = x.to(self.device), y.to(self.device)
 
                 batch_size = x.size(0)
                 real_labels = torch.ones(batch_size, 1).to(self.device)
@@ -171,16 +199,31 @@ class Trainer:
                 g_loss = self.loss_func(self.discriminator(fake_x), real_labels)
                 g_losses += g_loss.item()
 
-        return d_losses / len(test_loader), g_losses / len(test_loader)
+                # Classifier Loss 계산
+                pred = self.classifier(x)
+                c_loss = self.cls_loss_func(pred, y)
+                c_losses += c_loss.item()
+
+        return d_losses / len(test_loader), g_losses / len(test_loader), c_losses / len(test_loader)
 
     def save_generated_images(self, epoch):
-        z = torch.randn(64, self.latent_dim).to(self.device)  # 64개의 이미지를 생성
-        fake_images = self.generator(z)
-        fake_images = fake_images.view(fake_images.size(0), 1, 28, 28)  # 예: MNIST일 경우 28x28 크기로 reshape
-        save_image(fake_images, os.path.join(self.image_save_path, f"epoch_{epoch}.png"), nrow=8, normalize=True)
+        # 1개의 노이즈 벡터 생성
+        z = torch.randn(1, self.latent_dim).to(self.device)  
+        fake_image = self.generator(z)
+        
+        # 이미지 크기 변환 (예: MNIST일 경우 28x28 크기로 reshape)
+        fake_image = fake_image.view(1, 1, 28, 28)
+        
+        # Classifier를 사용해 클래스 예측
+        pred_class = torch.argmax(self.classifier(fake_image.view(1, -1)), dim=1).item()
+        
+        # 파일 이름에 클래스를 포함하여 저장
+        filename = os.path.join(self.image_save_path, f"epoch_{epoch}_class_{pred_class}.png")
+        save_image(fake_image, filename, nrow=1, normalize=True)
 
-        print(f"Generated images saved for epoch {epoch}")
+        print(f"Generated image saved for epoch {epoch} as {filename}")
+
 
 # Usage example
-trainer = Trainer(generator, discriminator, optimizer_G, optimizer_D, latent_dim, loss_func, n_epoch, device, 5, "/workspace/GSM_study/Grade2/output")
+trainer = Trainer(generator, discriminator, classifier, optimizer_G, optimizer_D, optimizer_C, latent_dim, loss_func, n_epoch, device, 5, "/workspace/GSM_study/Grade2/output")
 trainer.main(train_loader, valid_loader, test_loader)

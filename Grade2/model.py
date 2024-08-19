@@ -44,3 +44,31 @@ class Discriminator(nn.Module):
 
     def forward(self, img):
         return self.model(img)
+
+
+class Classifier(nn.Module):
+    def __init__(self, input_dim, num_classes):
+        super(Classifier, self).__init__()
+        self.model = nn.Sequential(
+            nn.Linear(input_dim, 256),
+            nn.ReLU(True),
+            nn.Dropout(0.3),  # 드롭아웃 추가
+            nn.Linear(256, 128),
+            nn.ReLU(True),
+            nn.Dropout(0.3),  # 드롭아웃 추가
+            nn.Linear(128, num_classes)
+        )
+
+    def forward(self, z):
+        return self.model(z)
+
+
+# class Classifier(nn.Module):
+#     def __init__(self, input_dim, num_classes):
+#         super(Classifier, self).__init__()
+#         self.model = nn.Sequential(
+#             nn.Linear(input_dim, num_classes)
+#         )
+
+#     def forward(self, z):
+#         return self.model(z)
