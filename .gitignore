@@ -54,3 +54,6 @@ data
 
 # 모델 가중치
 *.pth
+
+# output 폴더
+output
