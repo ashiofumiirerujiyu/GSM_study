@@ -4,10 +4,16 @@ from torch.utils.data import DataLoader, random_split
 
 
 def get_transform():
+    # train_transform = transforms.Compose([
+    #     transforms.RandomHorizontalFlip(),  # 이미지를 좌우로 뒤집기
+    #     transforms.RandomRotation(10),      # 이미지를 -10도에서 10도 사이로 회전
+    #     transforms.RandomResizedCrop(28, scale=(0.8, 1.0)),  # 이미지의 일부를 크롭하고 다시 28x28 크기로 조정
+    #     transforms.ToTensor(),              # 이미지를 텐서로 변환
+    #     transforms.Normalize((0.5,), (0.5,)),  # 픽셀 값을 [-1, 1]로 정규화
+    # ])
     train_transform = transforms.Compose([
-        transforms.RandomHorizontalFlip(),  # 이미지를 좌우로 뒤집기
-        transforms.RandomRotation(10),      # 이미지를 -10도에서 10도 사이로 회전
-        transforms.RandomResizedCrop(28, scale=(0.8, 1.0)),  # 이미지의 일부를 크롭하고 다시 28x28 크기로 조정
+        # transforms.RandomRotation(5),      # 이미지를 -5도에서 5도 사이로 회전
+        # transforms.RandomCrop(28, padding=2),  # 이미지를 약간 크롭 (패딩 추가로 정보 손실 최소화)
         transforms.ToTensor(),              # 이미지를 텐서로 변환
         transforms.Normalize((0.5,), (0.5,)),  # 픽셀 값을 [-1, 1]로 정규화
     ])
